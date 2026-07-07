@@ -101,6 +101,10 @@ def main() -> None:
         "--serve", action="store_true",
         help="Start Flask API server (micro-service 1)"
     )
+    parser.add_argument(
+        "--polybar", action="store_true",
+        help="Print Polybar status line and exit"
+    )
     parser.add_argument("--host", default=cfg.flask_host)
     parser.add_argument("--port", type=int, default=cfg.flask_port)
 
@@ -147,6 +151,12 @@ def main() -> None:
         elif args.command == "check":
             view.show_cloudflared_check(tunnel.check_cloudflared())
 
+        sys.exit(0)
+
+    # -- Polybar mode (before server mode) --------------------------------
+    if args.polybar:
+        from cloudfared_tunnel.view.polybar_view import polybar_status_line
+        print(polybar_status_line(_status()))
         sys.exit(0)
 
     # -- Server mode -------------------------------------------------------
