@@ -1,16 +1,17 @@
 {
-	"compatibility_date": "2025-10-08",
-	"main": "src/index.ts",
+	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "nxs1",
-	"upload_source_maps": true,
+	"main": "src/index.ts",
+	"compatibility_date": "2025-10-08",
+	"assets": {
+		"directory": "./src/public",
+		"binding": "ASSETS"
+	},
 	"d1_databases": [
 		{
 			"binding": "DB",
 			"database_id": "6142a82f-0360-450d-924a-edbc54190a1e",
 			"database_name": "d1-template-database"
 		}
-	],
-	"observability": {
-		"enabled": true
-	}
+	]
 }

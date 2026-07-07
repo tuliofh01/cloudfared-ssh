@@ -1,0 +1,16 @@
+[Unit]
+Description=Cloudfared Tunnel Manager Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/tuliofh01/cloudfared-tunneling
+ExecStartPre=/home/tuliofh01/cloudfared-tunneling/scripts/restore-tunnel.sh
+ExecStart=/home/tuliofh01/cloudfared-tunneling/.venv/bin/python -m cloudfared_tunnel.main --serve
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

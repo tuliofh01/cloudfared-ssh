@@ -1,0 +1,156 @@
+<div class="app-container">
+  <!-- Header -->
+  <header class="header">
+    <div class="header-content">
+      <h1 class="title">
+        <span class="title-icon">◈</span>
+        {{ title() }}
+      </h1>
+      <button class="fingerprint-btn" (click)="toggleFingerprintPopup()">
+        <span class="fingerprint-icon">◉</span>
+        <span class="fingerprint-hash">{{ fingerprint()?.hash?.slice(0, 8) || '------' }}</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Status Card -->
+    <section class="status-section fade-in">
+      <div class="card status-card">
+        <div class="status-header">
+          <h2>SSH Tunnel Status</h2>
+          <div class="status-indicator" [ngClass]="statusColor()"></div>
+        </div>
+        
+        <div class="status-details">
+          <div class="status-row">
+            <span class="label">Status:</span>
+            <span class="value" [ngClass]="statusColor()">{{ statusText() }}</span>
+          </div>
+          
+          <div class="status-row" *ngIf="tunnelStatus() as status">
+            <span class="label">PID:</span>
+            <span class="value">{{ status.pid || 'N/A' }}</span>
+          </div>
+          
+          <div class="status-row">
+            <span class="label">Uptime:</span>
+            <span class="value">{{ uptimeFormatted() }}</span>
+          </div>
+          
+          <div class="status-row" *ngIf="tunnelStatus() as status">
+            <span class="label">URL:</span>
+            <span class="value url">{{ status.url || 'N/A' }}</span>
+          </div>
+        </div>
+        
+        <div class="status-controls">
+          <button 
+            class="btn btn-primary" 
+            (click)="startTunnel()"
+            [disabled]="isStarting() || tunnelStatus().status === 'running'"
+          >
+            {{ isStarting() ? 'Starting...' : 'Start Tunnel' }}
+          </button>
+          
+          <button 
+            class="btn btn-danger" 
+            (click)="stopTunnel()"
+            [disabled]="isStopping() || tunnelStatus().status === 'stopped'"
+          >
+            {{ isStopping() ? 'Stopping...' : 'Stop Tunnel' }}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- System Info -->
+    <section class="system-section fade-in">
+      <div class="card">
+        <h2>System Info</h2>
+        <div class="system-stats">
+          <div class="stat-item">
+            <span class="stat-label">Your IP</span>
+            <span class="stat-value">{{ userIP() }}</span>
+          </div>
+          <div class="stat-item" *ngIf="systemInfo() as info">
+            <span class="stat-label">CPU</span>
+            <span class="stat-value">{{ info.cpu_percent }}%</span>
+          </div>
+          <div class="stat-item" *ngIf="systemInfo() as info">
+            <span class="stat-label">Memory</span>
+            <span class="stat-value">{{ info.memory_percent }}%</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Logs Section -->
+    <section class="logs-section fade-in">
+      <div class="card logs-card">
+        <div class="logs-header">
+          <h2>System Logs</h2>
+          <span class="log-count">{{ logs().length }} entries</span>
+        </div>
+        
+        <div class="logs-container">
+          <div class="log-entry" *ngFor="let log of logs(); trackBy: trackByFn">
+            <span class="log-line">{{ log }}</span>
+          </div>
+          
+          <div class="no-logs" *ngIf="logs().length === 0">
+            <span class="text-muted">No logs available</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Fingerprint Popup -->
+  <div class="popup-overlay" *ngIf="showFingerprintPopup()" (click)="toggleFingerprintPopup()">
+    <div class="popup-content card" (click)="$event.stopPropagation()">
+      <div class="popup-header">
+        <h2>Fingerprint Details</h2>
+        <button class="close-btn" (click)="toggleFingerprintPopup()">×</button>
+      </div>
+      
+      <div class="fingerprint-details" *ngIf="fingerprint() as fp">
+        <div class="fp-row">
+          <span class="label">Hash:</span>
+          <code class="value">{{ fp.hash }}</code>
+        </div>
+        
+        <div class="fp-row">
+          <span class="label">Canvas ID:</span>
+          <code class="value">{{ fp.canvas.slice(0, 16) }}...</code>
+        </div>
+        
+        <div class="fp-row">
+          <span class="label">Screen:</span>
+          <span class="value">{{ fp.screen }}</span>
+        </div>
+        
+        <div class="fp-row">
+          <span class="label">Timezone:</span>
+          <span class="value">{{ fp.timezone }}</span>
+        </div>
+        
+        <div class="fp-row">
+          <span class="label">Language:</span>
+          <span class="value">{{ fp.language }}</span>
+        </div>
+        
+        <div class="fp-row">
+          <span class="label">Platform:</span>
+          <span class="value">{{ fp.platform }}</span>
+        </div>
+        
+        <div class="fp-row">
+          <span class="label">IP Address:</span>
+          <span class="value">{{ userIP() }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
