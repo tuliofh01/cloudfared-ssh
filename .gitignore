@@ -78,13 +78,6 @@ out
 # Nuxt.js build / generate output
 .nuxt
 
-# Wrangler
-.wrangler/
-.dev.vars
-
-# Build artifacts
-src/public/js/
-src/public/css/
-
 # Project state (user-local)
 .cloudfared-tunneling/
+.cloudflared/tunnel-token

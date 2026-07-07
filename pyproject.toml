@@ -1,11 +1,16 @@
 [tool.poetry]
 name = "cloudfared-tunneling"
 version = "1.0.0"
-description = "Cloudflare Tunnel Manager — CLI, API, Polybar & systemd control"
+description = "Cloudflare Tunnel Manager — CLI, REST API, Polybar toggle & systemd auto-recovery"
 authors = ["tuliofh01"]
 license = "Apache-2.0"
 readme = "README.md"
 packages = [{ include = "cloudfared_tunnel" }]
+
+[tool.poetry.urls]
+Homepage = "https://github.com/tuliofh01/cloudfared-ssh"
+Repository = "https://github.com/tuliofh01/cloudfared-ssh.git"
+"Issues" = "https://github.com/tuliofh01/cloudfared-ssh/issues"
 
 [tool.poetry.dependencies]
 python = "^3.11"

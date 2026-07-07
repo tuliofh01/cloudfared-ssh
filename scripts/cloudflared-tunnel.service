@@ -1,0 +1,14 @@
+[Unit]
+Description=Cloudflare Tunnel — ssh-tunnel (ssh.gmin-sap-ops.net)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/tuliofh01/cloudfared-tunneling/scripts/run-cloudflared-tunnel.sh
+Restart=always
+RestartSec=5
+Environment=HOME=/home/tuliofh01
+
+[Install]
+WantedBy=default.target
