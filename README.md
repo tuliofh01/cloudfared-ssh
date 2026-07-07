@@ -151,7 +151,10 @@ api --> logs
 @enduml
 ```
 
-> The diagram is in **PlantUML** format. Render it at [plantuml.com](https://www.plantuml.com/plantuml/uml/) or use a VS Code extension. It shows the full flow from **polybar click → systemd → cloudflared tunnel** and **remote SSH client → Cloudflare edge → your machine**.
+> The diagram is in **PlantUML** format.  
+> **Quick render:** Copy the code above and paste at [plantuml.com](https://www.plantuml.com/plantuml/uml/)  
+> **VS Code:** Install "PlantUML" extension, then `Alt+D` to preview  
+> It shows the full flow from **polybar click → systemd → cloudflared tunnel** and **remote SSH client → Cloudflare edge → your machine**.
 
 ### Flow summary
 
@@ -214,58 +217,143 @@ Cloudflare Tunnel creates an outbound **QUIC connection** from your machine to C
 
 ### Step-by-step
 
+#### On the VM (the machine you want to access remotely)
+
 ```bash
-# ── On THIS machine (the one you want to access remotely) ──
+# 1. One-command setup (creates duke user, installs deps, configures service)
+sudo bash scripts/setup-vm.sh
 
-# 1. Install cloudflared (if not already)
-bash wizard.sh
-
-# 2. Store your tunnel token (get it from Cloudflare Zero Trust dashboard)
-echo "YOUR_TUNNEL_TOKEN" > ~/.cloudflared/tunnel-token
-chmod 600 ~/.cloudflared/tunnel-token
-
-# 3. Start the tunnel as a systemd user service
-systemctl --user enable cloudflared-tunnel.service   # auto-start on boot
-systemctl --user start cloudflared-tunnel.service     # start now
-
-# 4. Verify it's connected
-systemctl --user status cloudflared-tunnel.service
-# Look for: "Active: active (running)"
+# 2. Verify the tunnel is running
+systemctl status cloudflared-tunnel.service
+# Should show: Active: active (running)
 ```
 
+#### On a remote client (the machine you're connecting FROM)
+
 ```bash
-# ── On a REMOTE machine (the one you're connecting FROM) ──
+# 3. Install cloudflared (one-time)
+# macOS: brew install cloudflared
+# Linux: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
 
-# 5. Install cloudflared on the client too
-#    (macOS: brew install cloudflared)
-#    (Linux: see https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
-
-# 6. Add this to ~/.ssh/config:
-Host ssh.gmin-sap-ops.net
+# 4. Add this to ~/.ssh/config:
+Host ssh.your-domain.com
     ProxyCommand cloudflared access ssh --hostname %h
 
-# 7. Connect!
-ssh your-username@ssh.gmin-sap-ops.net
+# 5. Connect!
+ssh duke@ssh.your-domain.com
 ```
 
-> **Tip:** On the remote machine, run `cloudssh` after adding the alias to see these instructions.
+> **Password:** `1123581321` (Fibonacci sequence: 1,1,2,3,5,8,13,21 + ...)
 
-### If you don't have a Cloudflare domain yet
+### Self-Hosting Guide: Set up your own domain + VM
 
-The project also supports **quick tunnels** — ephemeral `trycloudflare.com` URLs:
+If you want to replicate this setup from scratch — your own domain, your own VM, your own tunnel — follow this end-to-end guide.
+
+#### 1. Get a domain and a VM
+
+| Resource | Options | Cost |
+|----------|---------|------|
+| **Domain** | Namecheap, Cloudflare Registrar, Porkbun | ~$10/year |
+| **VM** | Linode ($5/mo), Hetzner ($4/mo), Oracle Cloud (free) | $0–5/mo |
+| **OS** | Arch, Debian 12, Ubuntu 24.04, Fedora 40 | Free |
 
 ```bash
-# Starts a tunnel that gives you a random https://xxxx.trycloudflare.com URL
+# SSH into your fresh VM
+ssh root@<VM_IP>
+```
+
+#### 2. Point your domain to Cloudflare
+
+1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) → **Add site**
+2. Enter your domain, select the **Free** plan
+3. Copy the Cloudflare nameservers shown, update them at your domain registrar
+4. Wait ~5 minutes for DNS propagation (check with `dig +trace your-domain.com`)
+5. In Cloudflare dashboard → **Zero Trust** → **Networks** → **Tunnels**
+
+#### 3. Create a Cloudflare Tunnel
+
+1. In Zero Trust → Networks → Tunnels → **Create a tunnel**
+2. Choose **cloudflared** connector → name it (e.g., `ssh-tunnel`)
+3. Copy the **token** (starts with `eyJ...`) — this is your machine's identity
+4. In the **Public Hostname** tab, configure:
+   - **Subdomain:** `ssh`
+   - **Domain:** your-domain.com
+   - **Type:** `SSH`
+   - **URL:** `localhost:22`
+5. **Save** — the tunnel exists in Cloudflare now, waiting for your machine to connect
+
+#### 4. Run the VM setup wizard
+
+```bash
+git clone https://github.com/tuliofh01/cloudfared-ssh.git
+cd cloudfared-ssh
+sudo bash scripts/setup-vm.sh
+```
+
+The wizard will:
+1. Prompt for the tunnel token — paste the `eyJ...` token from step 3
+2. Create the **duke** sudoer user (password: `1123581321`)
+3. Install and start the cloudflared systemd service
+4. Configure shell aliases and (if available) Polybar
+
+After ~10 seconds, verify:
+
+```bash
+systemctl status cloudflared-tunnel.service
+# Active: active (running) — connected to Cloudflare Edge
+
+# Or via the CLI:
+python3 -m cloudfared_tunnel.main status
+# Status: running
+```
+
+#### 5. Connect from anywhere
+
+On any machine with `cloudflared` installed, add this to `~/.ssh/config`:
+
+```
+Host ssh.your-domain.com
+    ProxyCommand cloudflared access ssh --hostname %h
+```
+
+Then connect:
+
+```bash
+ssh duke@ssh.your-domain.com
+# Password: 1123581321
+```
+
+#### What the setup script automates
+
+```
+sudo bash scripts/setup-vm.sh
+  │
+  ├─ 1. Install system packages (cloudflared, python3, git, openssh)
+  ├─ 2. Create 'duke' sudoer user — password: 1123581321
+  ├─ 3. Set up Python venv + pip dependencies
+  ├─ 4. Store tunnel token → /home/duke/.cloudflared/tunnel-token
+  ├─ 5. Install systemd service → cloudflared-tunnel.service (enabled)
+  ├─ 6. Start tunnel — connects to Cloudflare Edge immediately
+  ├─ 7. Add shell aliases for duke + root
+  └─ 8. Configure Polybar widget (if polybar is installed)
+```
+
+### Quick tunnels (no domain required)
+
+If you don't have a domain yet, use **quick tunnels** for ephemeral `trycloudflare.com` URLs:
+
+```bash
+# Starts a tunnel → gives you a random https://xxxx.trycloudflare.com URL
 python -m cloudfared_tunnel.main start
 
-# Check the URL in the status
+# Check the URL
 python -m cloudfared_tunnel.main status
 ```
 
-Quick tunnels are useful for:
-- Temporary demos
-- Sharing a local web app with a colleague
-- Testing before setting up a permanent domain
+Quick tunnels are great for:
+- Temporary demos — share a local web app for 5 minutes
+- Testing before buying a domain
+- CI/CD ephemeral environments
 
 ---
 
@@ -484,6 +572,117 @@ cloudfared-tunneling/tests/test_all.py ............... [100%]
 The test suite covers `TunnelState`, `TunnelProcess` (mocked), `DurableState`, `StateStore`, `AppConfig`, import checks for all controllers/views, and a smoke test for `--help`.
 
 ---
+
+---
+
+## Troubleshooting
+
+### Tunnel won't start
+
+```bash
+# Check the service logs
+journalctl -u cloudflared-tunnel.service -n 50 --no-pager
+
+# Common issues:
+# 1. Token file missing → echo "TOKEN" > ~/.cloudflared/tunnel-token
+# 2. cloudflared not installed → bash wizard.sh
+# 3. Port 22 not listening → sudo systemctl status sshd
+
+# Check if cloudflared binary works
+cloudflared --version
+```
+
+### Cannot SSH from remote
+
+```bash
+# 1. Is the tunnel running?
+systemctl --user status cloudflared-tunnel.service  # user-level
+#    OR
+sudo systemctl status cloudflared-tunnel.service    # system-level
+
+# 2. Is SSH listening?
+sudo ss -tlnp | grep :22
+
+# 3. Test DNS resolution
+dig +short ssh.your-domain.com
+# Should show a Cloudflare IP (not your server's IP)
+
+# 4. Test tunnel connectivity (from the VM)
+curl -s http://127.0.0.1:20241/metrics | grep ha_connections
+# Should show: cloudflared_tunnel_ha_connections 1
+```
+
+### Polybar not showing
+
+```bash
+# 1. Is the module in your bar config?
+cat ~/.config/polybar/config.ini | grep cloudfared-tunnel
+
+# 2. Run the script manually
+~/.config/polybar/scripts/cloudflared-toggle.sh
+
+# 3. Restart Polybar
+polybar-msg cmd restart
+```
+
+### State mismatch
+
+If the CLI says "stopped" but the tunnel is actually running:
+
+```bash
+# Force state refresh
+python -m cloudfared_tunnel.main status
+
+# Or delete state and restart
+rm -f ~/.cloudfared-tunneling/state.json
+systemctl --user restart cloudflared-tunnel.service
+```
+
+---
+
+## Architecture Decisions
+
+### Why systemd user services (not system-wide)?
+
+| Aspect | User service (`systemctl --user`) | System service (`sudo systemctl`) |
+|--------|-----------------------------------|------------------------------------|
+| **No sudo** | Start/stop without root | Requires `sudo` every time |
+| **Polybar integration** | Same session, works with GUI | Needs polkit hacks |
+| **Security** | Runs as your user, not root | Full root access if exploited |
+| **Auto-start** | `loginctl enable-linger` | Built-in |
+| **Token access** | Reads from `~/.cloudflared/` | Needs `/root/` or permission tweaks |
+
+Winner: **User service** — because Polybar runs in your user session and we want click-to-toggle without sudo prompts.
+
+### Why tokens (not certs)?
+
+Cloudflare offers two auth methods:
+
+- **Tokens** (`cloudflared tunnel run --token eyJ...`) — simpler, no config file, no origin cert
+- **Cert-based** (`cloudflared tunnel create` + `config.yml`) — more control, but requires `cloudflared login`
+
+For `setup-vm.sh`, tokens win because:
+- Single string to copy-paste (no file management)
+- Works headless (no browser login on the VM)
+- Easy to rotate (just change the token in Zero Trust dashboard)
+
+The cert-based approach is still available via `ensure_config()` in the CLI for users who prefer it.
+
+### Why Rich (not Textual)?
+
+| Library | Philosophy | Use case |
+|---------|-----------|----------|
+| **Rich** | Print-and-forget markup | CLI tools, status output, logging |
+| **Textual** | Event loop, widgets, async | Full TUI applications (htop-like) |
+
+Rich is **below TUI level** — we print status, not a dashboard. The Flask API (`--serve`) is the dashboard.
+
+### Why JSON state (not SQLite)?
+
+- **Debuggable** — `cat ~/.cloudfared-tunneling/state.json` tells you everything
+- **No schema migrations** — what you see is what you get
+- **Single file** — easy to backup, easy to delete on corruption
+- **Fast enough** — we write once per start/stop, not per request
 
 ---
 
