@@ -1,129 +1,74 @@
-# Cloudfared Tunnel Manager - Agents Guide
-
-This project is organized into three main domains. Each domain has specific responsibilities and interacts with the others through well-defined interfaces.
+# Cloudfared Tunnel Manager — Agents Guide
 
 ## Project Structure
 
 ```
 cloudfared-tunneling/
-├── backend/              # Python Flask API + Terminal Interface
-├── frontend/            # Angular Frontend Application  
-├── src/                 # Cloudflare Worker (unchanged boilerplate)
-├── worker-configuration.d.ts
-├── wrangler.json
-└── pyproject.toml       # Poetry project configuration
+├── cloudfared_tunnel/       # Python package (Poetry src-layout)
+│   ├── __init__.py
+│   ├── main.py              # Procedural CLI entry point
+│   ├── model/               # OOP domain models
+│   │   ├── tunnel.py        # TunnelProcess, TunnelState
+│   │   ├── state.py         # StateStore (JSON persistence)
+│   │   └── config.py        # AppConfig (env-based)
+│   ├── controller/          # Fat controllers (business logic)
+│   │   ├── tunnel_controller.py  # Tunnel lifecycle + logs
+│   │   └── syncer_controller.py  # Background sync to Worker
+│   └── view/                # Output adapters
+│       ├── cli_view.py      # Rich-based CLI (not Textual)
+│       ├── flask_view.py    # Flask REST API micro-service
+│       └── polybar_view.py  # Polybar status-line generator
+├── frontend/                # Angular frontend (unchanged)
+├── src/                     # Cloudflare Worker (unchanged)
+├── scripts/
+│   └── tunnel.service       # systemd unit
+├── pyproject.toml           # Poetry config
+├── wrangler.json             # Cloudflare Worker config
+└── .env                     # TUNNEL_SECRET
 ```
 
-## Domain A: Local Backend (Python/Flask)
+## Architecture
 
-**Location**: `backend/`
-**Purpose**: Controls cloudflared tunnel, manages logs, exposes local API
+**MVC with fat controllers** — each controller owns its own business logic
+(gateway pattern, no separate service layer).  Models are OOP dataclasses;
+`main.py` is procedural and wires everything together.
 
-### Key Files
-- `app.py` - Flask API server (port 5000)
-- `tui.py` - Terminal User Interface (Textual)
-- `requirements.txt` - Python dependencies
-
-### API Endpoints
-- `GET /api/tunnel/status` - Get tunnel status
-- `POST /api/tunnel/start` - Start tunnel
-- `POST /api/tunnel/stop` - Stop tunnel
-- `GET /api/logs` - Get system logs
-- `GET /api/system/info` - Get system info
+### Micro-services
+1. **API** (Flask, port 5000) — `--serve` flag
+2. **Syncer** (background thread) — pushes status + logs to Worker every 30 s
 
 ### Commands
 ```bash
-# Install dependencies
-cd backend
-pip install -r requirements.txt
+# CLI
+python -m cloudfared_tunnel.main status
+python -m cloudfared_tunnel.main start
+python -m cloudfared_tunnel.main stop
+python -m cloudfared_tunnel.main logs
+python -m cloudfared_tunnel.main health
 
-# Run Flask API
-python app.py
-
-# Run TUI
-python tui.py
+# API server
+python -m cloudfared_tunnel.main --serve
 ```
 
-## Domain B: Frontend (Angular)
+### API Endpoints
+- `GET /api/health` — Health check
+- `GET /api/tunnel/status` — Tunnel status
+- `POST /api/tunnel/start` — Start tunnel
+- `POST /api/tunnel/stop` — Stop tunnel
+- `GET /api/logs` — Recent logs
+- `GET /api/system/info` — System resources
+- `GET /api/cloudflared/check` — cloudflared installed?
 
-**Location**: `frontend/`
-**Purpose**: Web interface for tunnel control and monitoring
+### Key design decisions
+- Rich for CLI output (no Textual dependency)
+- State persisted to `~/.cloudfared-tunneling/state.json`
+- Named tunnel + config.yml for SSH; quick tunnel fallback for HTTP
+- Rotating log files: 10 MB × 5 = 50 MB cap
+- Apache 2.0 License
 
-### Key Files
-- `src/app/app.ts` - Main application component
-- `src/app/services/api.service.ts` - API communication
-- `src/app/services/fingerprint.service.ts` - Browser fingerprinting
-- `src/styles.scss` - Global grey/black theme
-
-### Build & Run
-```bash
-# Build for production (outputs to ../src/public)
-cd frontend
-ng build
-
-# Development server
-ng serve
-
-# Build for Cloudflare Worker
-npm run build
-```
-
-### Features
-- SSH tunnel status display
-- Start/Stop controls
-- Real-time log viewer
-- User fingerprinting (Canvas + Audio + Hardware)
-- IP address tracking
-- Responsive design (media queries)
-- Minimalist grey/black theme
-
-## Domain C: Cloudflare Worker
-
-**Location**: `src/`
-**Purpose**: Serves frontend assets, stores data in D1
-
-### Important
-This directory contains the original Cloudflare boilerplate. Keep changes here minimal to ensure compatibility with upstream updates.
-
-## Common Tasks
-
-### Starting Development
-1. **Backend**: `cd backend && python app.py`
-2. **Frontend**: `cd frontend && ng serve`
-3. **Worker**: `npm run dev`
-
-### Building for Production
-```bash
-# Build frontend (outputs to src/public)
-cd frontend && ng build
-
-# Deploy worker
-npm run deploy
-```
-
-### Log Management
-- Logs are stored in `~/.cloudfared-tunneling/logs/`
-- Maximum size: 50MB (5 files × 10MB)
-- Rotation is automatic via Python RotatingFileHandler
-
-## Environment Variables
-
-Create `.env` in project root:
+### Environment Variables
 ```bash
 TUNNEL_SECRET=your_secret_here
-FLASK_ENV=development
-```
-
-## Troubleshooting
-
-### Backend won't start
-- Check if port 5000 is available
-- Ensure cloudflared is installed: `which cloudflared`
-
-### Frontend build fails
-- Run `npm install` in frontend directory
-- Check TypeScript errors: `ng build`
-
-### Worker deployment issues
-- Ensure wrangler is authenticated: `npx wrangler login`
-- Check D1 database exists
+WORKER_URL=https://nxs1.tuliofh01.workers.dev
+TUNNEL_UUID=              # Named tunnel UUID (optional)
+SERVICE_URL=http://localhost:80  # Default local service

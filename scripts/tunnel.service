@@ -4,10 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/tuliofh01/Documents/Coding Projects/cloudfared-tunneling
-ExecStart=/home/tuliofh01/Documents/Coding Projects/cloudfared-tunneling/.venv/bin/python backend/app.py
+WorkingDirectory=/home/tuliofh01/cloudfared-tunneling
+ExecStart=/home/tuliofh01/cloudfared-tunneling/.venv/bin/python -m cloudfared_tunnel.main --serve
 Restart=always
 RestartSec=10
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=default.target
