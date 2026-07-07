@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install flask flask-cors requests python-dotenv psutil rich cryptography
+      - name: Check imports
+        run: python -c "from cloudfared_tunnel.main import main; print('OK')"
+      - name: Check CLI help
+        run: python -m cloudfared_tunnel.main --help
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell scripts
+        run: |
+          bash -n wizard.sh || true
+          bash -n run.sh || true
+          bash -n build.sh || true
+
+  deploy-worker:
+    if: github.ref == 'refs/heads/main'
+    needs: [test-python]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Wrangler
+        run: npm install wrangler --save-dev
+      - name: Deploy Worker
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

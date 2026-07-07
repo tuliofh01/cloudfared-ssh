@@ -6,6 +6,7 @@ Fat controller: all tunnel business logic lives here, not in a service layer.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -119,26 +120,69 @@ class TunnelController:
 
     # -- config helpers ----------------------------------------------------
 
-    def create_default_config(self) -> None:
-        """Write a starter ``config.yml`` if none exists."""
-        path = self._cfg.config_path
-        if path.exists():
-            return
+    def ensure_config(self) -> str:
+        """Auto-create a named tunnel + ``config.yml`` if none exists.
 
-        template = f"""# cloudfared-tunneling – auto-generated config
-# Replace <tunnel-uuid> with your actual tunnel ID, then uncomment:
-#
-# tunnel: {self._cfg.tunnel_uuid or "<tunnel-uuid>"}
-# credentials-file: {self._cfg.state_dir / "credentials.json"}
-#
-# ingress:
-#   - hostname: ssh.example.com
-#     service: ssh://localhost:22
-#   - service: http_status:404
+        Returns a status message describing what was done.
+        """
+        creds_dir = Path.home() / ".cloudflared"
+        creds_dir.mkdir(parents=True, exist_ok=True)
+        config_path = creds_dir / "config.yml"
+        creds_file = creds_dir / "credentials.json"
+
+        # Step 1 — see if cloudflared already knows a tunnel
+        tunnel_name = "cloudfared-tunnel"
+        try:
+            result = subprocess.run(
+                ["cloudflared", "tunnel", "list"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if tunnel_name in result.stdout:
+                # Extract UUID from list output
+                for line in result.stdout.splitlines():
+                    if tunnel_name in line:
+                        parts = line.split()
+                        for p in parts:
+                            if len(p) == 36 and p.count("-") == 4:
+                                self._cfg.tunnel_uuid = p
+                                break
+                logger.info("Tunnel '%s' exists (UUID=%s)", tunnel_name, self._cfg.tunnel_uuid)
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            return f"cloudflared not available: {e}"
+
+        # Step 2 — create tunnel if missing
+        if not self._cfg.tunnel_uuid:
+            try:
+                result = subprocess.run(
+                    ["cloudflared", "tunnel", "create", tunnel_name],
+                    capture_output=True, text=True, timeout=15,
+                )
+                if result.returncode != 0:
+                    return f"Failed to create tunnel: {result.stderr.strip()}"
+                for line in result.stdout.splitlines():
+                    if len(line) == 36 and line.count("-") == 4:
+                        self._cfg.tunnel_uuid = line
+                        break
+                logger.info("Created tunnel '%s' (UUID=%s)", tunnel_name, self._cfg.tunnel_uuid)
+            except subprocess.TimeoutExpired:
+                return "Timed out creating tunnel"
+
+        # Step 3 — write config.yml
+        if config_path.exists():
+            return f"Config already exists at {config_path}"
+
+        hostname = os.getenv("TUNNEL_HOSTNAME", "ssh.example.com")
+        config_yml = f"""tunnel: {self._cfg.tunnel_uuid}
+credentials-file: {creds_file}
+
+ingress:
+  - hostname: {hostname}
+    service: ssh://localhost:22
+  - service: http_status:404
 """
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(template)
-        logger.info("Wrote default config → %s", path)
+        config_path.write_text(config_yml)
+        logger.info("Wrote config.yml → %s", config_path)
+        return f"Tunnel '{tunnel_name}' ready. Config at {config_path}"
 
     @staticmethod
     def check_cloudflared() -> bool:
