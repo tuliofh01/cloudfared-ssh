@@ -1,74 +1,57 @@
-# Cloudfared Tunnel Manager — Agents Guide
+# Cloudfared Tunnel — Agents Guide
 
-## Project Structure
+## Architecture (v2)
 
 ```
-cloudfared-tunneling/
-├── cloudfared_tunnel/       # Python package (Poetry src-layout)
+cloudfared-tunnel/
+├── cloudfared_tunnel/
 │   ├── __init__.py
-│   ├── main.py              # Procedural CLI entry point
-│   ├── model/               # OOP domain models
-│   │   ├── tunnel.py        # TunnelProcess, TunnelState
-│   │   ├── state.py         # StateStore (JSON persistence)
-│   │   └── config.py        # AppConfig (env-based)
-│   ├── controller/          # Fat controllers (business logic)
-│   │   ├── tunnel_controller.py  # Tunnel lifecycle + logs
-│   │   └── syncer_controller.py  # Background sync to Worker
-│   └── view/                # Output adapters
-│       ├── cli_view.py      # Rich-based CLI (not Textual)
-│       ├── flask_view.py    # Flask REST API micro-service
-│       └── polybar_view.py  # Polybar status-line generator
-├── frontend/                # Angular frontend (unchanged)
-├── src/                     # Cloudflare Worker (unchanged)
+│   └── main.py              # Curses TUI + CLI — single file, ~280 LOC
 ├── scripts/
-│   └── tunnel.service       # systemd unit
-├── pyproject.toml           # Poetry config
-├── wrangler.json             # Cloudflare Worker config
-└── .env                     # TUNNEL_SECRET
+│   ├── cloudflared-tunnel.service   # systemd user unit
+│   ├── run-cloudflared-tunnel.sh    # Token wrapper for cloudflared
+│   ├── restore-tunnel.sh            # Boot-time state recovery
+│   ├── setup.sh                     # Quick setup (any distro)
+│   └── setup-vm.sh                  # Interactive VM setup wizard
+├── pyproject.toml                   # Zero dependencies
+├── README.md
+└── LICENSE
 ```
 
-## Architecture
+## Key design decisions (v2)
 
-**MVC with fat controllers** — each controller owns its own business logic
-(gateway pattern, no separate service layer).  Models are OOP dataclasses;
-`main.py` is procedural and wires everything together.
+| Decision | Why |
+|----------|-----|
+| **Zero deps** | Python stdlib only — `curses`, `subprocess`, `json`, `urllib.request` |
+| **Curses TUI** | No Flask/Rich/Textual — one terminal window, no web server |
+| **User-level systemd** | No sudo — `systemctl --user`, token in `~/.cloudflared/` |
+| **Token auth** | Single string to copy-paste, headless setup |
+| **JSON state** | `~/.cloudfared-tunneling/state.json` — debuggable, no DB |
+| **Single file** | ~280 LOC replaces 7-file MVC (~700+ LOC) — 3× less code |
 
-### Micro-services
-1. **API** (Flask, port 5000) — `--serve` flag
-2. **Syncer** (background thread) — pushes status + logs to Worker every 30 s
+## Entry points
 
-### Commands
-```bash
-# CLI
-python -m cloudfared_tunnel.main status
-python -m cloudfared_tunnel.main start
-python -m cloudfared_tunnel.main stop
-python -m cloudfared_tunnel.main logs
-python -m cloudfared_tunnel.main health
-
-# API server
-python -m cloudfared_tunnel.main --serve
+```
+python3 -m cloudfared_tunnel.main           # TUI dashboard
+python3 -m cloudfared_tunnel.main --status  # One-liner for scripts
+python3 -m cloudfared_tunnel.main --on      # Start daemon
+python3 -m cloudfared_tunnel.main --off     # Stop daemon
+python3 -m cloudfared_tunnel.main --logs    # Journal logs dump
+sudo bash scripts/setup.sh                  # Quick setup
+sudo bash scripts/setup-vm.sh               # Interactive VM wizard
 ```
 
-### API Endpoints
-- `GET /api/health` — Health check
-- `GET /api/tunnel/status` — Tunnel status
-- `POST /api/tunnel/start` — Start tunnel
-- `POST /api/tunnel/stop` — Stop tunnel
-- `GET /api/logs` — Recent logs
-- `GET /api/system/info` — System resources
-- `GET /api/cloudflared/check` — cloudflared installed?
+## Tunnel lifecycle
 
-### Key design decisions
-- Rich for CLI output (no Textual dependency)
-- State persisted to `~/.cloudfared-tunneling/state.json`
-- Named tunnel + config.yml for SSH; quick tunnel fallback for HTTP
-- Rotating log files: 10 MB × 5 = 50 MB cap
-- Apache 2.0 License
+```
+TUI [S]  →  systemctl --user start  →  run-cloudflared-tunnel.sh
+                                            ↓
+                                    cloudflared tunnel run --token
+                                            ↓
+                                    QUIC connection to Cloudflare Edge
+```
 
-### Environment Variables
-```bash
-TUNNEL_SECRET=your_secret_here
-WORKER_URL=https://nxs1.tuliofh01.workers.dev
-TUNNEL_UUID=              # Named tunnel UUID (optional)
-SERVICE_URL=http://localhost:80  # Default local service
+## State persisted
+
+Status written to `~/.cloudfared-tunneling/state.json` on start/stop.
+Read by `restore-tunnel.sh` on boot to resume if it was running.

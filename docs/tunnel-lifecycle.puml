@@ -1,0 +1,103 @@
+@startuml
+!theme plain
+title cloudfared-tunnel — Tunnel Lifecycle
+footer cloudfared-tunnel v2.0.0 — Hosted VM via Cloudflare Tunnel
+
+' ─── Main flow ─────────────────────────────────────────────────────
+
+start
+
+partition "User Action" {
+  :User launches python3 -m cloudfared_tunnel;
+}
+
+partition "CLI / Controller" {
+  if (Arguments?) then (--status)
+    :call status_line();
+    :print "HOSTED VM ON" / "HOSTED VM OFF";
+    stop
+  elseif (--on) then (yes)
+    :call tunnel_start();
+  elseif (--off) then (yes)
+    :call tunnel_stop();
+    stop
+  elseif (--logs) then (yes)
+    :call read_logs();
+    :print journal entries;
+    stop
+  else (no args)
+    :curses.wrapper(main_tui);
+    :Show dashboard;
+  endif
+}
+
+partition "TUI Key Handler" {
+  if (Key pressed?) then ([S])
+    if (Tunnel active?) then (yes)
+      :call tunnel_stop();
+    else (no)
+      :call tunnel_start();
+    endif
+  elseif ([R]) then (yes)
+    :tunnel_stop();
+    :sleep 0.5s;
+    :tunnel_start();
+  elseif ([L]) then (yes)
+    :toggle log / dashboard view;
+  else ([Q] or ESC)
+    stop
+  endif
+}
+
+partition "tunnel_start()" {
+  :Read token from ~/.cloudflared/tunnel-token;
+  if (Token exists?) then (yes)
+    :systemctl --user start cloudflared-tunnel.service;
+    :sleep 1s;
+    if (systemd active?) then (yes)
+      :Save state.json → "running";
+    else (no)
+      :Save state.json → "error";
+    endif
+  else (no)
+    :Return {status:"error", message:"No token"};
+    stop
+  endif
+}
+
+partition "systemd" {
+  :systemd activates run-cloudflared-tunnel.sh;
+  :Script passes token to cloudflared;
+}
+
+partition "cloudflared" {
+  :cloudflared tunnel run --token <token>;
+  :Establish QUIC connection to Cloudflare Edge;
+  if (Connection OK?) then (yes)
+    :Expose localhost:22 via public hostname;
+    :Expose metrics on 127.0.0.1:20241;
+  else (no)
+    :systemd auto-restarts (Restart=always);
+  endif
+}
+
+partition "Cloudflare Edge → Client" {
+  :Public hostname: ssh.domain.com → localhost:22;
+  :Client ProxyCommand: cloudflared access ssh --hostname %h;
+  :QUIC tunnel relays SSH traffic;
+  :SSH session active on hosted VM;
+}
+
+partition "Boot Recovery" {
+  :System boots;
+  :restore-tunnel.sh reads ~/.cloudfared-tunneling/state.json;
+  if (Was running before shutdown?) then (yes)
+    :systemctl --user start cloudflared-tunnel.service;
+  else (no)
+    :Stay stopped; no action needed;
+  endif
+}
+
+stop
+
+@enduml
