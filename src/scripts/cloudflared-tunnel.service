@@ -1,0 +1,14 @@
+[Unit]
+Description=Cloudflare Tunnel — ssh-tunnel (ssh.your-domain.com)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.cloudfared-tunnel/src/scripts/run-cloudflared-tunnel.sh
+Restart=always
+RestartSec=5
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target
